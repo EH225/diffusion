@@ -1,0 +1,7 @@
+*__pycache__*
+*.ipynb*
+*results/
+*refs/
+*scratch/
+*data/
+*datasets/
