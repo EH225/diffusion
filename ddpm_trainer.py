@@ -410,7 +410,7 @@ class Trainer:
                     torch.cuda.empty_cache()
                     gc.collect()  # This will slow down training if called too often
 
-                    self.report_lr_opt_state()  # Report info about the current learning rate and opt state
+                    self.report_lr_wd()  # Report info about the current learning rate and opt state
                     self.report_memory_usage()  # Report info about the memory usage
 
                 del batch, loss, grad_norm
