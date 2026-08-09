@@ -202,6 +202,7 @@ class UNet(nn.Module):
         :param use_self_attn: If True, then the U-Net model will use self-attention layers internally.
         """
         super().__init__()
+        self.name = "UNet"
         assert image_size in [32, 64, 128], "image_size must be one of [32, 64, 128]"
         assert num_classes >= 2 and isinstance(num_classes, int), "Must have at least 2 classes"
         assert isinstance(uncond_prob, float) and 0.0 <= uncond_prob < 1.0
