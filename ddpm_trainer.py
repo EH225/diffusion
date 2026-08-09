@@ -294,7 +294,7 @@ class Trainer:
         """
         self.logger.info(f"Reporting learning rates and weight decay at step={self.step}")
         for i, group in enumerate(self.opt.param_groups):  # Report all learning rates
-            self.logger.info((f"lr = {group['lr']:.2e}, wd = {group['weight_decay']:.2e}, "
+            self.logger.info((f"   lr = {group['lr']:.2e}, wd = {group['weight_decay']:.2e}, "
                               f"count = {len(group['params'])}"))
 
     def report_memory_usage(self) -> None:
@@ -401,7 +401,7 @@ class Trainer:
 
                 ### Periodically save the model weights to disk, always on the last iter too
                 if self.step % self.save_every == 0 or self.step == self.num_steps:
-                    self.save(self.step, "train")
+                    self.save(self.step)
                     # Clear the list of losses after each save, store only the ones from the last save to
                     # the next save
                     self.train_losses, self.val_losses = [], []
