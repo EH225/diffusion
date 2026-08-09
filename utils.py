@@ -121,7 +121,8 @@ def save_images(images: torch.Tensor, titles: List[str], ncol: int = 4, save_pat
 
     for ax, img, title in zip(axes, images, titles):
         img = img.permute(1, 2, 0).float().cpu()  # (C, H, W) -> (H, W, C)
-        img = ((img + 1) / 2).clamp(0, 1)  # Rescale from [-1, +1] back to [0, 1]
+        # This line is no longer needed in this project bc this is already handled by GaussianDiffusion
+        # img = ((img + 1) / 2).clamp(0, 1)  # Rescale from [-1, +1] back to [0, 1]
 
         ax.imshow(img)
         ax.set_title(title)
