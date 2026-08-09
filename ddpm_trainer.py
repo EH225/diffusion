@@ -417,19 +417,22 @@ class Trainer:
                 pbar.update(1)
 
     @compute_with_amp
-    def generate_samples(self, seed: int = None):
+    def generate_samples(self, seed: int = None, n_samples: int = 8):
         """
         Generates and saves samples using the EMA model. This method is called periodically in the eval
         routine during training to track the quality of the synthetically generated images during training.
+        A grid of images is saved that is (num_classes, n_samples) in size.
 
         :param seed: An int random seed can be set so that we get similar image generations each eval run
             so that the quality of samples over time can be directly compared.
+        :param n_samples: The number of columns in the output saved samples i.e. the number of sample images
+            per class to generate and save.
         """
         self.ema_model.eval()  # Switch to eval model for generating samples
-        # Create 8 synthetic images for each class
-        class_id = [i for i in range(self.num_classes) for _ in range(8)]  # (num_classes * 8, )
+        # Create ncol synthetic images for each class
+        class_id = [i for i in range(self.num_classes) for _ in range(n_samples)]
         titles = [f"{i} {self.class_labels[i]}" for i in class_id]
-        class_id = torch.tensor(class_id, device=self.device)  # (B = num_classes * 8, )
+        class_id = torch.tensor(class_id, device=self.device)  # (B = num_classes * n_samples, )
         rng = torch.Generator(device=self.device)  # Get up a random number generator
         if seed is not None:  # Set the seed if one is provided for replicability
             rng.manual_seed(seed)
@@ -439,8 +442,8 @@ class Trainer:
                                             self.config["eval"]["eta"])
 
         # Save a copy to both the samples sub-directory and also the main directory to retain the latest
-        save_images(x_fake, titles, 5, os.path.join(self.samples_dir, f"samples-{self.step}.png"))
-        save_images(x_fake, titles, 5, os.path.join(self.results_dir, "samples-latest.png"))
+        save_images(x_fake, titles, n_samples, os.path.join(self.samples_dir, f"samples-{self.step}.png"))
+        save_images(x_fake, titles, n_samples, os.path.join(self.results_dir, "samples-latest.png"))
 
     @compute_with_amp
     def run_eval(self):
