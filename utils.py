@@ -87,14 +87,14 @@ def generate_loss_plots(loss_dir: str, save_dir: str) -> None:
     # 3). Generate and save a plot of the training loss
     fig, axes = plt.subplots(1, 2, figsize=(15, 3))
 
-    if train_loss:
+    if len(train_loss) > 0:
         ax = axes[0]
         ax.plot(train_loss["loss"].rolling(50, min_periods=1).mean())  # Apply smoothing
         ax.set_title("Train loss")
         ax.grid(color="lightgray")
 
-    if val_loss:
-        ax = axes[0]
+    if len(val_loss) > 0:
+        ax = axes[1]
         ax.plot(val_loss["loss"])
         ax.set_title("Val loss")
         ax.grid(color="lightgray")
