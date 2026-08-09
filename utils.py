@@ -59,7 +59,7 @@ def generate_loss_plots(loss_dir: str, save_dir: str) -> None:
     This function will read in the loss files cached to loss_dir and create plots and save them to save_dir
     so that we can automatically visualize the progression of the loss curves during training.
 
-    :param lose_dir: The location where the loss .csv files are cached.
+    :param loss_dir: The location where the loss .csv files are cached.
     :param save_dir: The location where the output loss curves plots will be saved to.
     """
     # 1). Read in values from disk and collect them into lists of dataframes
@@ -79,36 +79,29 @@ def generate_loss_plots(loss_dir: str, save_dir: str) -> None:
         train_loss.index = train_loss.step
         train_loss.drop("step", inplace=True, axis=1)
 
-        # 3). Generate and save a plot of the training loss
-        fig, axes = plt.subplots(1, train_loss.shape[1], figsize=(18, 3))
-
-        for i, col in enumerate(train_loss.columns):
-            ax = axes[i]
-            ax.plot(train_loss[col].rolling(50, min_periods=1).mean())  # Apply smoothing
-            ax.set_title(f"train {col}")
-            ax.grid(color="lightgray")
-
-        plt.tight_layout()
-        fig.savefig(os.path.join(save_dir, "train_loss.png"))
-        plt.close(fig)
-
     if len(val_loss) > 0:
         val_loss = pd.concat(val_loss).sort_values("step")
         val_loss.index = val_loss.step
         val_loss.drop("step", inplace=True, axis=1)
 
-        # 4). Generate and save a plot of the validation loss
-        fig, axes = plt.subplots(1, val_loss.shape[1], figsize=(15, 3))
+    # 3). Generate and save a plot of the training loss
+    fig, axes = plt.subplots(1, 2, figsize=(15, 3))
 
-        for i, col in enumerate(val_loss.columns):
-            ax = axes[i]
-            ax.plot(val_loss[col])
-            ax.set_title(f"val {col}")
-            ax.grid(color="lightgray")
+    if train_loss:
+        ax = axes[0]
+        ax.plot(train_loss["loss"].rolling(50, min_periods=1).mean())  # Apply smoothing
+        ax.set_title("Train loss")
+        ax.grid(color="lightgray")
 
-        plt.tight_layout();
-        fig.savefig(os.path.join(save_dir, "val_loss.png"))
-        plt.close(fig)
+    if val_loss:
+        ax = axes[0]
+        ax.plot(val_loss["loss"])
+        ax.set_title("Val loss")
+        ax.grid(color="lightgray")
+
+    plt.tight_layout()
+    fig.savefig(os.path.join(save_dir, "loss_lots.png"))
+    plt.close(fig)
 
 
 def save_images(images: torch.Tensor, titles: List[str], ncol: int = 4, save_path: str = None):
