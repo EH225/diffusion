@@ -12,23 +12,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def get_logger(log_filename: str):
-    """
-    Returns a logging.Logger instance that will write log outputs to a filepath specified.
-    """
-    logger = logging.getLogger("logger")  # Init a logger
-    logger.setLevel(logging.DEBUG)
-    logging.basicConfig(format="%(message)s", level=logging.DEBUG)
-    handler = logging.FileHandler(log_filename)  # Configure the logging output file path
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter("%(asctime)s:%(levelname)s: %(message)s"))
-    logging.getLogger().addHandler(handler)
-    logging.getLogger("PIL").setLevel(logging.INFO)
-    logging.getLogger("PIL.PngImagePlugin").setLevel(logging.INFO)
-    logging.getLogger("distributed.utils").setLevel(logging.ERROR)
-    return logger
-
-
 def read_yaml(file_path: str) -> dict:
     """
     Helper function that reads in a yaml file specified and returns the associated data as a dict.

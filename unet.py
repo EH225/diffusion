@@ -4,6 +4,7 @@ This module defines the U-Net CNN model used to perform the iterative denoising 
 
 import math
 import torch
+from torch import Tensor
 from torch import nn
 import torch.nn.functional as F
 from typing import Tuple, Dict
@@ -23,7 +24,7 @@ class SinusoidalTimeStepEmb(nn.Module):
         super().__init__()
         self.dim = dim
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         For an input tensor of size (B, ) this returns a tensor of size (B, dim)
         using sinusoidal timestep embeddings.
@@ -80,7 +81,7 @@ class SelfAttention(nn.Module):
         # Define a trainable scaling factor for the residual connection to improve stability
         self.res_scale = nn.Parameter(torch.ones(1) * 0.1)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Forward pass through multi-headed self-attention block between input channels.
 
@@ -141,7 +142,7 @@ class ResnetBlock(nn.Module):
         self.res_scale = nn.Parameter(torch.ones(1) * 0.1)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor, cond_emb: torch.Tensor = None) -> torch.Tensor:
+    def forward(self, x: Tensor, cond_emb: Tensor = None) -> Tensor:
         """
         Forward pass through this convolutional residual block.
 
@@ -225,9 +226,7 @@ class UNet(nn.Module):
         )
 
         # Define an embedding layer for the class_id provided to the model
-        # With classifier-free guidance, we need 1 extra class for unconditional sampling,
-        # hence we set the number of unique embedding vectors to num_classes + 1
-        self.class_embedding = nn.Embedding(self.num_classes + 1, self.cond_dim)  # (B, cond_dim)
+        self.class_embedding = nn.Embedding(self.num_classes, self.cond_dim)  # (B, cond_dim)
 
         # 1). An initial convolutional layer which goes from 3 input RGB channels to self.dim
         self.init_conv = nn.Conv2d(in_channels=3, out_channels=self.dim, kernel_size=3, padding=1)
@@ -291,64 +290,63 @@ class UNet(nn.Module):
         # 3). Add 1 final convolution to map to the output channels
         self.final_conv = nn.Conv2d(in_channels=self.dim, out_channels=3, kernel_size=1)
 
-    def cfg_forward(self, x: torch.Tensor, time: torch.Tensor, model_kwargs: Dict = None) -> torch.Tensor:
+    def _cfg_forward(self, x: Tensor, class_id: Tensor, t: Tensor, cfg_scale: float = 3.0) -> Tensor:
         """
-        Classifier-free guidance forward pass method. model_kwargs should contain `cfg_scale`. An output
-        image is produced using the context provided and without it, and then the 2 are combined:
+        Classifier-free guidance (CFG) forward pass method on an input tensor of noisy images x_t. This method
+        outputs a predicted eps or x_0, depending on how the model was trained. CFG runs 2 forward
+        passes, one with the class_id condition and one without and combines them to generate a final
+        prediction:
+            x = (scale + 1) * UNet(x_t, class_id, t) - scale * UNet(x_t, None, t)
+            where UNet is the U-Net model forward pass.
 
-            x = (scale + 1) * eps(x_t, cond) - scale * eps(x_t, empty)
-            where eps is the U-Net model forward pass.
-
-        :param x: An input tensor of shape (B, C, H, W).
-        :param time: An input tensor of shape (B, ) containing the timesteps of each image.
-        :param model_kwargs: A dictionary of additional model inputs including class_id (B, ).
-        :returns: An output tensor of shape (B, C, H, W) matching the input x in shape.
+        :param x: An input tensor of noisy images of shape (B, C, H, W).
+        :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
+        :param t: An input tensor of shape (B, ) containing the timesteps of each image.
+        :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
+            no CFG sampling at all. 2-5 is usually considered a good range.
+        :returns: An output tensor of shape (B, C, H, W) matching the input x in shape, which is either
+            predicted eps or x_0 depending on how the model was trained.
         """
         assert not self.training, "CFG should only be used during evaluation/sampling"
-        model_kwargs = {} if model_kwargs is None else model_kwargs
-        model_kwargs = model_kwargs.copy()  # Make a copy of the dictionary wrapper to avoid mutation
-        cfg_scale = model_kwargs.pop("cfg_scale")  # Remove so that when we call forward below, we don't enter
-        # into an infinite recursion loop since the presence of cfg_scale triggers this method call
+        assert class_id is not None, "class_id cannot be None for CFG forward pass eval"
         # Apply classifier-free guidance using:
-        #   x = (scale + 1) * eps(x_t, cond) - scale * eps(x_t, empty)
-        x_cond = self.forward(x, time, model_kwargs)  # Generate the output x1 with the context
-        model_kwargs["class_id"] = None  # For unconditional sampling, set class_id to None
-        x_uncond = self.forward(x, time, model_kwargs)  # Generate again without the context
+        #   x = (scale + 1) * UNet(x_t, class_id, t) - scale * UNet(x_t, None, t)
+        x_cond = self.forward(x, class_id, t, 0.0)  # Generate the output x_cond with the class_id context
+        x_uncond = self.forward(x, None, t, 0.0)  # Generate again without the class_id context
         x = (cfg_scale + 1) * x_cond - cfg_scale * x_uncond  # Combine into 1 output image
         return x
 
-    def forward(self, x: torch.Tensor, time: torch.Tensor, model_kwargs: Dict = None) -> torch.Tensor:
+    def forward(self, x: Tensor, class_id: Tensor, t: Tensor, cfg_scale: float = 0.0) -> Tensor:
         """
-        Forward pass through the U-Net model.
+        Forward pass through the U-Net model on an input tensor of noisy images x_t. This method outputs a
+        predicted eps or x_0, depending on how the model was trained.
 
-        :param x: An input tensor of noisy images with a shape of (B, C, H, W).
-        :param time: An input tensor of shape (batch_size, ) containing the timesteps of each x noisy image.
-        :param model_kwargs: A dictionary of additional model inputs including "class_id" to create a possible
-            class embedding of shape (B, cond_dim).
-        :returns: An output tensor of shape (B, C, H, W) matching the original input x shape.
+        :param x: An input tensor of noisy images of shape (B, C, H, W).
+        :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
+        :param t: An input tensor of shape (B, ) containing the timesteps of each image.
+        :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
+            no CFG sampling at all. 2-5 is usually considered a good range.
+        :returns: An output tensor of shape (B, C, H, W) matching the input x in shape, which is either
+            predicted eps or x_0 depending on how the model was trained.
         """
-        model_kwargs = {} if model_kwargs is None else model_kwargs  # Set a default if None provided
-
-        # 0). If classifier-free guidance is to be used, invoke the cfg_forward instead
-        if "cfg_scale" in model_kwargs:  # If specified, then run using the classifier-free guidance method
-            # instead of the standard forward-pass defined below
-            return self.cfg_forward(x, time, model_kwargs)
+        # 0). If cfg_scale > 0, then use the cfg_forward method to compute the forward pass instead
+        if cfg_scale > 0:
+            return self._cfg_forward(x, class_id, t, cfg_scale)
 
         # 1). Convert the timestep t into a deep latent vector representation
-        time_embed = self.time_embedding(time)
+        time_embed = self.time_embedding(t)
 
         # 2). Embed the class_id into a deep latent vector representation if one is provided
-        class_id = model_kwargs.get("class_id", None)
-        if class_id is None:  # Default to a vector of zeros if no class ID is provided
+        if class_id is None:  # Default to a vector of zeros if no class IDs are provided
             class_embed = torch.zeros(x.shape[0], self.cond_dim, device=x.device)  # (B, cond_dim)
         else:  # Otherwise, convert each class_id into a latent vector representation
             class_embed = self.class_embedding(class_id)  # (B, cond_dim)
 
         # 3). If this is a forward pass called during training, randomly drop the class embedding some of
-        # the time as specified by the config file
+        # the time as specified by the config parameter uncond_prob
         if self.training:  # Randomly drop the class conditioning
             mask = (torch.rand(class_embed.shape[0]) > self.uncond_prob).float()  # (B, )
-            mask = mask[:, None].to(class_embed.device)  # (B, 1)
+            mask = mask[:, None].to(class_embed.device)  # (B, 1) of 1s and 0s
             class_embed = class_embed * mask  # Randomly zero out the class embedding with p=uncond_prob
 
         # 4). Combine the timestep embedding with the class conditional embedding to obtain 1 context tensor

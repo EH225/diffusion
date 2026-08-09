@@ -29,3 +29,5 @@ training: # Specify parameters used for DDPM training
   use_latest_checkpoint: True
   eval_every: 1000 # How often to compute eval loss and generate samples
   save_every: 10000  # How often to cache the model checkpoints and losses
+  cfg_scale: 3.0 # Set a classifier-free scaling factor for eval sampling
+

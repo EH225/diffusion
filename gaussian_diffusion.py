@@ -140,10 +140,10 @@ class GaussianDiffusion(nn.Module):
         x_t = mu + sigma * noise  # (B, C, H, W)
         return x_t
 
-    def training_loss(self, x_0: Tensor, model_kwargs: Dict = None) -> Tensor:
+    def training_loss(self, x_0: Tensor, class_id: Tensor) -> Tensor:
         """
-        Computes a loss value for training using an input set of original, clean images x_0 and a dictionary
-        of model_kwargs that can provide class IDs as context. The following process is used:
+        Computes a loss value for training using an input set of original, clean images x_0 and class_id
+        that serves as class-conditional context. The following process is used:
             1). Randomly sample timesteps t from [0, self.num_timesteps] for each x_0 image
             2). Randomly sample Gaussian noise for each x_0 image
             3). Generate an x_t using x_0 and the noise for each obs in the batch
@@ -151,13 +151,10 @@ class GaussianDiffusion(nn.Module):
             5). Compare the model's prediction (i.e. the U-Net output) vs the ground truth
 
         :param x_0: A batch of original images of shape (B, C, H, W).
-        :param model_kwargs: A dictionary of additional model inputs including class_id for a possible
-            class_id tensor of size (B,).
+        :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
         :returns: A single torch float representing the loss from running a training iteration for 1 batch.
         """
-        model_kwargs = {} if model_kwargs is None else model_kwargs
-        B = x_0.shape[0]
-        t = torch.randint(0, self.num_timesteps, (B,), device=x_0.device).long()  # (B,) random timesteps
+        t = torch.randint(0, self.num_timesteps, (x_0.shape[0],), device=x_0.device).long()  # (B,) random t
         x_0 = self.normalize(x_0)  # (B, C, H, W) convert [0, 1] to [-1, 1] values
         eps = torch.randn_like(x_0)  # (B, C, H, W) create Gaussian noise N(0, 1) of the same shape
         target = eps if self.objective == "pred_eps" else x_0  # (B, C, H, W)
@@ -166,7 +163,7 @@ class GaussianDiffusion(nn.Module):
         # Sample x_t from q(x_t | x_0) using the `q_sample` function
         x_t = self.q_sample(x_0, t, eps)  # Generate a noisy image using the starting image
         # Compute the y-hat values, will either be x_0 or eps, but will match target from above
-        y_hat = self.model(x_t, t, model_kwargs)
+        y_hat = self.model(x_t, class_id, t)
         loss = (torch.pow(target - y_hat, 2) * loss_weight).mean()  # Compute the weighted MSE Loss
         return loss
 
@@ -189,7 +186,7 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_std
 
     @torch.no_grad()
-    def p_sample(self, x_t: Tensor, t: int, model_kwargs: Dict = None) -> Tensor:
+    def p_sample(self, x_t: Tensor, class_id: Tensor, t: int, cfg_scale: float = 3.0) -> Tensor:
         """
         Samples from p(x_{t-1} | x_t) according to Eq. (6) of the DDPM paper. This returns 1 step forward
         of the de-noising process i.e. x_{t-1} is 1 step less noisy than x_t with x_0 being a clean image.
@@ -197,21 +194,20 @@ class GaussianDiffusion(nn.Module):
          method for ddpm_sample.
 
         :param x_t: A batch of noise images of shape (B, C, H, W).
+        :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
         :param t: An integer denoting the denoising timestep currently being run. Note this is a single int
             and not a tensor of ints, it's the same int used for all images in the batch.
-        :param model_kwargs: A dictionary of additional model inputs including "text_emb" for a possible
-            test embedding of shape (batch_size, condition_dim).
+        :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
+            no CFG sampling at all. 2-5 is usually considered a good range.
         :returns: A batch of images x_{t-1} that are 1 step less noisy, same size and shape as x_t.
         """
-        model_kwargs = {} if model_kwargs is None else model_kwargs
-
         t = torch.full((x_t.shape[0],), t, device=x_t.device, dtype=torch.long)  # (B,) of all the same val t
         # sample x_{t-1} from p(x_{t-1} | x_t)
         # Get the model's prediction, note the model can predict either x_0 or the noise
         if self.objective == "pred_x_0":  # The model output will be the predicted x_0
-            x_0 = self.model(x_t, t, model_kwargs)
+            x_0 = self.model(x_t, class_id, t, cfg_scale)
         elif self.objective == "pred_eps":  # The model output will be the predicted noise
-            eps = self.model(x_t, t, model_kwargs)
+            eps = self.model(x_t, class_id, t, cfg_scale)
             x_0 = self.x_0_from_eps(x_t, t, eps)  # Convert from eps to x_0 using epx and x_t
         x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
 
@@ -223,37 +219,33 @@ class GaussianDiffusion(nn.Module):
         return x_tm1
 
     @torch.no_grad()
-    def ddpm_sample(self, batch_size: int = 16, return_all_t: bool = False,
-                    model_kwargs: Dict = None) -> Tensor:
+    def ddpm_sample(self, class_id: Tensor, return_all_t: bool = False, cfg_scale: float = 3.0) -> Tensor:
         """
         This method uses the slower DDPM sampling approach, which visits all timesteps.
 
-        Generates a batch of generated images of size (B, C, H, W) given the input model_kwargs, which will
-        provide optional class ID values as context. This method begins with B=batch_size pure Gaussian
-        noise images of size (B, C, H, W) and applies a series of iterative denoising operations to them
-        and returns the clean images when finished with values [0, 1]. This method is used in inference
-        (not training).
+        Generates a batch of generated images of size (B, C, H, W) given the input class_id, which will
+        provide class ID values as context. This method begins with B=batch_size pure Gaussian noise images of
+        size (B, C, H, W) and applies a series of iterative denoising operations to them and returns the clean
+        images when finished with values [0, 1]. This method is used in inference (not training).
 
-        :param batch_size: The number of images to generate.
+        :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
         :param return_all_t: If set to True, then the first (all noise) and all T denoising timestep images
             are returned as a tensor of size (batch_size, T+1, C, H, W). Otherwise, just the last image
             is returned i.e. the maximally denoised one of size (B, C, H, W).
-        :param model_kwargs: A dictionary of additional model inputs including class_id for a possible
-            class_id tensor of size (B,).
-        :returns: A tensor of denoised image of size either:
+        :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
+            no CFG sampling at all. 2-5 is usually considered a good range.
+        :returns: A tensor of denoised images of size:
                 (B, T+1, C, H, W) if return_all_t is True else (B, C, H, W)
         """
-        model_kwargs = {} if model_kwargs is None else model_kwargs
         self.eval()  # Set to eval mode for inference, switch off dropout and effects batch norm
-
-        img_shape = (batch_size, 3, self.image_size, self.image_size)  # (B, C, H, W)
+        img_shape = (len(class_id), 3, self.image_size, self.image_size)  # (B, C, H, W)
         x_t = torch.randn(img_shape, device=self.betas.device)  # Generate pure Gaussian noise ~ N(0, 1)
         # Create a list to hold the images that are denoised, starting with a pure noise image
         x_t_all = [x_t] if return_all_t else None
 
         for t in tqdm(reversed(range(self.num_timesteps)), desc="DDPM sampling", total=self.num_timesteps):
             # Iteratively apply denoising steps to the image to move towards an original, clean image x_0
-            x_t = self.p_sample(x_t, t, model_kwargs)
+            x_t = self.p_sample(x_t, class_id, t, cfg_scale)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 
@@ -284,8 +276,8 @@ class GaussianDiffusion(nn.Module):
         return eta * A * B
 
     @torch.no_grad()
-    def ddim_step(self, x_t: Tensor, t_int: int, t_int_prev: int, eta: float, model_kwargs: Dict = None
-                  ) -> Tensor:
+    def ddim_step(self, x_t: Tensor, clas_id: Tensor, t_int: int, t_int_prev: int, eta: float,
+                  cfg_scale: float = 3.0) -> Tensor:
         """
         This is a helper method for ddim_sample that return x_{t-k} from a given input x_t. The DDIM sampling
         method takes larger size k steps than the DDPM sampling method which always takes size 1 steps.
@@ -296,25 +288,25 @@ class GaussianDiffusion(nn.Module):
 
         where z = N(0, 1) and the same size as x_{t-1}. This added noise term is 0 if eta=0.
 
+        :param x_t: An input tensor of noisy images of shape (B, C, H, W).
+        :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
         :param t_int: The current timestep as an int.
         :param t_int_prev: The next sampling timestep / previous noise process timestep where
             t_int > t_int_prev since we count down from T (most noise) to 0 (no noise).
         :param eta: Controls how much additional random noise is injected during each DDIM step. Set to 0
             for deterministic sampling.
-        :param model_kwargs: A dictionary of additional model inputs including class_id for a possible
-            class_id tensor of size (B,).
+        :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
+            no CFG sampling at all. 2-5 is usually considered a good range.
         :return: A batch of images x_{t-1} that are 1 step less noisy, same size and shape as x_t.
         """
-        model_kwargs = {} if model_kwargs is None else model_kwargs
-
         t = torch.full((x_t.shape[0],), t_int, device=x_t.device, dtype=torch.long)  # (B,) of t_int
         # Get the model's prediction, note the model can predict either x_0 or the noise
         if self.objective == "pred_x_0":  # The model output will be the predicted x_0
-            x_0 = self.model(x_t, t, model_kwargs)
+            x_0 = self.model(x_t, clas_id, t, cfg_scale)
             eps = self.eps_from_x_0(x_t, t, x_0)  # Convert from x_0 to eps using x_0 and x_t
         elif self.objective == "pred_eps":  # The model output will be the predicted noise
-            eps = self.model(x_t, t, model_kwargs)
-            x_0 = self.x_0_from_eps(x_t, t, eps)  # Convert from eps to x_0 using eps and x_t
+            eps = self.model(x_t, clas_id, t, cfg_scale)
+            x_0 = self.x_0_from_eps(x_t, t, eps)  # Convert from eps to x_0 using eps and x_t+
         x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
 
         if t_int_prev < 0:  # If we're at the final DDIM sampling step, just return x_0, no noise to be added
@@ -330,26 +322,26 @@ class GaussianDiffusion(nn.Module):
         return x_tmk  # x_{t-k} (B, C, H, W)
 
     @torch.no_grad()
-    def ddim_sample(self, batch_size: int = 16, return_all_t: bool = False, model_kwargs: Dict = None,
+    def ddim_sample(self, class_id: Tensor, return_all_t: bool = False, cfg_scale: float = 3.0,
                     sampling_timesteps: int = 50, eta: float = 0.0) -> Tensor:
         """
         This method uses the faster DDIM sampling approach, which visits only a few timesteps.
 
-        Generates a batch of generated images of size (B, C, H, W) given the input model_kwargs, which will
-        provide optional class ID values as context. This method begins with B=batch_size pure Gaussian
-        noise images of size (B, C, H, W) and applies a series of iterative denoising operations to them
-        and returns the clean images when finished with values [0, 1]. This method is used in inference
-        (not training).
+        Generates a batch of generated images of size (B, C, H, W) given the input class_id, which will
+        provide class ID values as context for each generated image. This method begins with B=batch_size
+        pure Gaussian noise images of size (B, C, H, W) and applies a series of iterative denoising operations
+        to them and returns the clean images when finished with values [0, 1]. This method is used in
+        inference (not training).
 
         The model is trained with self.num_timesteps diffusion steps, but sampling can use a smaller number
         of sampling_timesteps instead.
 
-        :param batch_size: The number of images to generate.
+        :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
         :param return_all_t: If set to True, then the first (all noise) and all T denoising timestep images
             are returned as a tensor of size (batch_size, T+1, C, H, W). Otherwise, just the last image
             is returned i.e. the maximally denoised one of size (B, C, H, W).
-        :param model_kwargs: A dictionary of additional model inputs including class_id for a possible
-            class_id tensor of size (B,).
+        :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
+            no CFG sampling at all. 2-5 is usually considered a good range.
         :param sampling_timesteps: The number of sampling timesteps to use in DDIM sampling.
         :param eta: Controls how much additional random noise is injected during each DDIM step. Set to 0
             for deterministic sampling.
@@ -361,7 +353,6 @@ class GaussianDiffusion(nn.Module):
         assert sampling_timesteps > 0, "sampling_timesteps must be greather than 0"
         assert 0.0 <= eta <= 1.0, "eta must be 0.0 <= eta <= 1.0"
 
-        model_kwargs = {} if model_kwargs is None else model_kwargs
         self.eval()  # Set to eval mode for inference, switch off dropout and effects batch norm
         device = self.betas.device
 
@@ -370,7 +361,7 @@ class GaussianDiffusion(nn.Module):
         timesteps = torch.linspace(self.num_timesteps - 1, 0, sampling_timesteps, device=device).long()
 
         # Start from pure Gaussian noise x_T
-        img_shape = (batch_size, 3, self.image_size, self.image_size)  # (B, C, H, W)
+        img_shape = (len(class_id), 3, self.image_size, self.image_size)  # (B, C, H, W)
         x_t = torch.randn(img_shape, device=self.betas.device)  # Generate pure Gaussian noise ~ N(0, 1)
         # Create a list to hold the images that are denoised, starting with a pure noise image
         x_t_all = [x_t] if return_all_t else None
@@ -382,7 +373,7 @@ class GaussianDiffusion(nn.Module):
             # t_int_prev is the next timestep in the DDIM sampling process and prev step in the forward
             # noising process from x_0 -> x_T which is why it is called prev
             t_int_prev = timesteps[i + 1] if i < sampling_timesteps - 1 else -1
-            x_t = self.ddim_step(x_t, t_int, t_int_prev, eta, model_kwargs)
+            x_t = self.ddim_step(x_t, class_id, t_int, t_int_prev, eta, cfg_scale)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 
