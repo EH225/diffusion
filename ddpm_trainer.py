@@ -462,5 +462,5 @@ class Trainer:
             n_obs.append(len(batch["image"]))
         n_obs = torch.tensor(n_obs)
         val_loss = sum(loss * n for loss, n in zip(losses, n_obs)) / n_obs.sum()
-        self.val_losses.append((self.step, val_loss))
+        self.val_losses.append((self.step, val_loss.item()))
         self.model.train(was_training)  # Return to training mode to continue training afterwards

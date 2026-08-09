@@ -100,7 +100,7 @@ def generate_loss_plots(loss_dir: str, save_dir: str) -> None:
         ax.grid(color="lightgray")
 
     plt.tight_layout()
-    fig.savefig(os.path.join(save_dir, "loss_lots.png"))
+    fig.savefig(os.path.join(save_dir, "loss_plots.png"))
     plt.close(fig)
 
 
