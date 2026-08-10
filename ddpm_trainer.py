@@ -433,13 +433,10 @@ class Trainer:
         class_id = [i for i in range(self.num_classes) for _ in range(n_samples)]
         titles = [f"{i} {self.class_labels[i]}" for i in class_id]
         class_id = torch.tensor(class_id, device=self.device)  # (B = num_classes * n_samples, )
-        rng = torch.Generator(device=self.device)  # Get up a random number generator
-        if seed is not None:  # Set the seed if one is provided for replicability
-            rng.manual_seed(seed)
         # Generate fake images i.e. synthetic samples, using the EMA model of prior params
         x_fake = self.ema_model.ddim_sample(class_id, False, self.config["eval"]["cfg_scale"],
                                             self.config["eval"]["sampling_timesteps"],
-                                            self.config["eval"]["eta"])
+                                            self.config["eval"]["eta"], seed)
 
         # Save a copy to both the samples sub-directory and also the main directory to retain the latest
         save_images(x_fake, titles, n_samples, os.path.join(self.samples_dir, f"samples-{self.step}.png"))

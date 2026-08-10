@@ -186,7 +186,8 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_std
 
     @torch.no_grad()
-    def p_sample(self, x_t: Tensor, class_id: Tensor, t: int, cfg_scale: float = 3.0) -> Tensor:
+    def p_sample(self, x_t: Tensor, class_id: Tensor, t: int, cfg_scale: float = 3.0,
+                 seed: int = None) -> Tensor:
         """
         Samples from p(x_{t-1} | x_t) according to Eq. (6) of the DDPM paper. This returns 1 step forward
         of the de-noising process i.e. x_{t-1} is 1 step less noisy than x_t with x_0 being a clean image.
@@ -199,6 +200,7 @@ class GaussianDiffusion(nn.Module):
             and not a tensor of ints, it's the same int used for all images in the batch.
         :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
             no CFG sampling at all. 2-5 is usually considered a good range.
+        :param seed: A random seed that can be set to make sampling repeatable.
         :returns: A batch of images x_{t-1} that are 1 step less noisy, same size and shape as x_t.
         """
         t = torch.full((x_t.shape[0],), t, device=x_t.device, dtype=torch.long)  # (B,) of all the same val t
@@ -213,13 +215,18 @@ class GaussianDiffusion(nn.Module):
 
         # Get the mean and std for q(x_{t-1} | x_t, x_0) using self.q_posterior, and sample x_{t-1}
         posterior_mean, posterior_std = self.q_posterior(x_0, x_t, t)
-        noise = torch.randn_like(x_t)  # Generate Gaussian noise N(0, 1) of size (B, C, H, W)
+        rng = torch.Generator(device=class_id.device)  # Get up a random number generator
+        if seed is not None:  # Set the seed if one is provided for replicability
+            rng.manual_seed(seed)
+        # Generate Gaussian noise N(0, 1) of size (B, C, H, W)
+        noise = torch.randn_like(x_t, device=x_t.device, generator=rng)
         nonzero_mask = (t != 0).float().view(-1, 1, 1, 1)  # Handle if t == 0, then no noisy sampling
         x_tm1 = posterior_mean + nonzero_mask * posterior_std * noise
         return x_tm1
 
     @torch.no_grad()
-    def ddpm_sample(self, class_id: Tensor, return_all_t: bool = False, cfg_scale: float = 3.0) -> Tensor:
+    def ddpm_sample(self, class_id: Tensor, return_all_t: bool = False, cfg_scale: float = 3.0,
+                    seed: int = None) -> Tensor:
         """
         This method uses the slower DDPM sampling approach, which visits all timesteps.
 
@@ -234,18 +241,22 @@ class GaussianDiffusion(nn.Module):
             is returned i.e. the maximally denoised one of size (B, C, H, W).
         :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
             no CFG sampling at all. 2-5 is usually considered a good range.
+        :param seed: A random seed that can be set to make sampling repeatable.
         :returns: A tensor of denoised images of size:
                 (B, T+1, C, H, W) if return_all_t is True else (B, C, H, W)
         """
         self.eval()  # Set to eval mode for inference, switch off dropout and effects batch norm
         img_shape = (len(class_id), 3, self.image_size, self.image_size)  # (B, C, H, W)
-        x_t = torch.randn(img_shape, device=self.betas.device)  # Generate pure Gaussian noise ~ N(0, 1)
+        rng = torch.Generator(device=class_id.device)  # Get up a random number generator
+        if seed is not None:  # Set the seed if one is provided for replicability
+            rng.manual_seed(seed)
+        x_t = torch.randn(img_shape, device=self.betas.device, generator=rng)  # Generate pure noise ~ N(0, 1)
         # Create a list to hold the images that are denoised, starting with a pure noise image
         x_t_all = [x_t] if return_all_t else None
 
         for t in tqdm(reversed(range(self.num_timesteps)), desc="DDPM sampling", total=self.num_timesteps):
             # Iteratively apply denoising steps to the image to move towards an original, clean image x_0
-            x_t = self.p_sample(x_t, class_id, t, cfg_scale)
+            x_t = self.p_sample(x_t, class_id, t, cfg_scale, seed)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 
@@ -277,7 +288,7 @@ class GaussianDiffusion(nn.Module):
 
     @torch.no_grad()
     def ddim_step(self, x_t: Tensor, clas_id: Tensor, t_int: int, t_int_prev: int, eta: float,
-                  cfg_scale: float = 3.0) -> Tensor:
+                  cfg_scale: float = 3.0, seed: int = None) -> Tensor:
         """
         This is a helper method for ddim_sample that return x_{t-k} from a given input x_t. The DDIM sampling
         method takes larger size k steps than the DDPM sampling method which always takes size 1 steps.
@@ -297,6 +308,7 @@ class GaussianDiffusion(nn.Module):
             for deterministic sampling.
         :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
             no CFG sampling at all. 2-5 is usually considered a good range.
+        :param seed: A random seed that can be set to make sampling repeatable.
         :return: A batch of images x_{t-1} that are 1 step less noisy, same size and shape as x_t.
         """
         t = torch.full((x_t.shape[0],), t_int, device=x_t.device, dtype=torch.long)  # (B,) of t_int
@@ -318,12 +330,16 @@ class GaussianDiffusion(nn.Module):
         # Direction pointing toward x_t from x_0
         pred_direction = torch.sqrt(torch.clamp(1 - alpha_bar_prev - sigma ** 2, min=0.0)) * eps
         # Compute the DDIM update i.e. x_t -> x_{t-1}
-        x_tmk = torch.sqrt(alpha_bar_prev) * x_0 + pred_direction + sigma * torch.randn_like(x_t)
+        rng = torch.Generator(device=x_t.device)  # Get up a random number generator
+        if seed is not None:  # Set the seed if one is provided for replicability
+            rng.manual_seed(seed)
+        noise = torch.randn_like(x_t, device=x_t.device, generator=rng)
+        x_tmk = torch.sqrt(alpha_bar_prev) * x_0 + pred_direction + sigma * noise
         return x_tmk  # x_{t-k} (B, C, H, W)
 
     @torch.no_grad()
     def ddim_sample(self, class_id: Tensor, return_all_t: bool = False, cfg_scale: float = 3.0,
-                    sampling_timesteps: int = 50, eta: float = 0.0) -> Tensor:
+                    sampling_timesteps: int = 50, eta: float = 0.0, seed: int = None) -> Tensor:
         """
         This method uses the faster DDIM sampling approach, which visits only a few timesteps.
 
@@ -345,6 +361,7 @@ class GaussianDiffusion(nn.Module):
         :param sampling_timesteps: The number of sampling timesteps to use in DDIM sampling.
         :param eta: Controls how much additional random noise is injected during each DDIM step. Set to 0
             for deterministic sampling.
+        :param seed: A random seed that can be set to make sampling repeatable.
         :returns: A tensor of denoised image of size either:
                 (B, sampling_timesteps+1, C, H, W) if return_all_t is True else (B, C, H, W)
         """
@@ -362,7 +379,10 @@ class GaussianDiffusion(nn.Module):
 
         # Start from pure Gaussian noise x_T
         img_shape = (len(class_id), 3, self.image_size, self.image_size)  # (B, C, H, W)
-        x_t = torch.randn(img_shape, device=self.betas.device)  # Generate pure Gaussian noise ~ N(0, 1)
+        rng = torch.Generator(device=device)  # Get up a random number generator
+        if seed is not None:  # Set the seed if one is provided for replicability
+            rng.manual_seed(seed)
+        x_t = torch.randn(img_shape, device=self.betas.device, generator=rng)  # Generate pure noise ~ N(0, 1)
         # Create a list to hold the images that are denoised, starting with a pure noise image
         x_t_all = [x_t] if return_all_t else None
 
@@ -373,7 +393,7 @@ class GaussianDiffusion(nn.Module):
             # t_int_prev is the next timestep in the DDIM sampling process and prev step in the forward
             # noising process from x_0 -> x_T which is why it is called prev
             t_int_prev = timesteps[i + 1] if i < sampling_timesteps - 1 else -1
-            x_t = self.ddim_step(x_t, class_id, t_int, t_int_prev, eta, cfg_scale)
+            x_t = self.ddim_step(x_t, class_id, t_int, t_int_prev, eta, cfg_scale, seed)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 
