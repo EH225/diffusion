@@ -282,7 +282,7 @@ class UNet(nn.Module):
                 UpSample(c_in, c_out),
                 ResnetBlock(c_out * 2, c_out, self.cond_dim, self.dropout, self.groups),
                 ResnetBlock(c_out * 2, c_out, self.cond_dim, self.dropout, self.groups),
-                (SelfAttention(c_out, self.groups) if (idx == len(c_down_blocks) - 1) and self.use_self_attn
+                (SelfAttention(c_out, self.groups) if idx == 0 and self.use_self_attn
                  else nn.Identity()),
             ])
             self.ups.append(up_block)

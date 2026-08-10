@@ -284,10 +284,10 @@ def get_class_labels(dataset: str) -> dict:
 
 if __name__ == "__main__":
     # Pre-process all the images on disk for the AFHQ dataset to be [128, 128, 3]
-    print("Pre-processing AFHQ dataset images to be [128, 128, 3]")
+    print("Pre-processing AFHQ dataset images to be [64, 64, 3]")
     input_dir = os.path.join(CURRENT_DIR, "datasets", "afhq", "original")
     output_dir = os.path.join(CURRENT_DIR, "datasets", "afhq", "images")
-    resize_and_crop(input_dir, output_dir, 128)
+    resize_and_crop(input_dir, output_dir, 64)
 
     # print("Pre-processing celebA dataset images to be [64, 64, 3]")
     # input_dir = os.path.join(CURRENT_DIR, "datasets", "celebA", "img_align_celeba")
