@@ -17,6 +17,8 @@ class GaussianDiffusion(nn.Module):
         """
         Instantiates a Gaussian Diffusion Model instance.
 
+        Note: All image tensors going in and out are expected to have a range of [-1, +1].
+
         :param model: A torch model used to run iterative denoising steps on input noisy images.
         :param timesteps: The number of iterative denoising timesteps to use to generate an image i.e. to
             fully decode a pure Gaussian noise start to a clean x_0 image.
@@ -150,21 +152,27 @@ class GaussianDiffusion(nn.Module):
             4). Pass x_t and t into the model and predict either the noise that was added or x_0
             5). Compare the model's prediction (i.e. the U-Net output) vs the ground truth
 
-        :param x_0: A batch of original images of shape (B, C, H, W).
+        :param x_0: A batch of original images of shape (B, C, H, W). Note, these are expected to already
+            be normalized to [-1, 1] when passed to this function.
         :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
         :returns: A single torch float representing the loss from running a training iteration for 1 batch.
         """
+        # x_0 = self.normalize(x_0)  # (B, C, H, W) convert [0, 1] to [-1, 1] values
+        assert (-1.0 <= x_0).all() and (x_0 <= 1.0).all()
+        min_val = x_0.min()
+        if min_val >= 0:
+            print(f"x_0.min() >= 0, {min_val}, input x_0 may not be properly scaled to [-1, 1]")
+
         B = x_0.shape[0]  # Batch size
         # t = torch.randint(0, self.num_timesteps, (x_0.shape[0],), device=x_0.device).long()  # (B,) random t
         # 50% of batches/examples sample uniformly
         t_unif = torch.randint(0, self.num_timesteps, (B,), device=x_0.device).long()  # (B,)
         # 50% explicitly sample low-noise timesteps
-        t_low = torch.randint(0, 200, (B,), device=x_0.device).long()  # (B,)
+        t_low = torch.randint(0, int(self.num_timesteps * 0.2), (B,), device=x_0.device).long()  # (B,)
         mask = torch.rand(B, device=x_0.device) < 0.5
         t = torch.where(mask, t_low, t_unif)  # Sample timesteps more so on the lower end where the model
         # makes the most errors and where the errors most impact the visual quality of the outputs
 
-        x_0 = self.normalize(x_0)  # (B, C, H, W) convert [0, 1] to [-1, 1] values
         eps = torch.randn_like(x_0)  # (B, C, H, W) create Gaussian noise N(0, 1) of the same shape
         target = eps if self.objective == "pred_eps" else x_0  # (B, C, H, W)
         loss_weight = extract(self.loss_weight, t, target.shape)  # (B, C, H, W)
@@ -253,6 +261,7 @@ class GaussianDiffusion(nn.Module):
         :param seed: A random seed that can be set to make sampling repeatable.
         :returns: A tensor of denoised images of size:
                 (B, T+1, C, H, W) if return_all_t is True else (B, C, H, W)
+                with values [-1, +1].
         """
         self.eval()  # Set to eval mode for inference, switch off dropout and effects batch norm
         device = class_id.device
@@ -271,7 +280,7 @@ class GaussianDiffusion(nn.Module):
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        res = self.unnormalize(res)  # Res has values [-1, 1] due to clamping, map to [0, 1] instead
+        # res = self.unnormalize(res)  # Res has values [-1, 1] due to clamping, map to [0, 1] instead
         return res
 
     def get_ddim_sigma(self, t_int: int, t_int_prev: int, eta: float) -> Tensor:
@@ -374,6 +383,7 @@ class GaussianDiffusion(nn.Module):
         :param seed: A random seed that can be set to make sampling repeatable.
         :returns: A tensor of denoised image of size either:
                 (B, sampling_timesteps+1, C, H, W) if return_all_t is True else (B, C, H, W)
+                with values [-1, +1].
         """
         msg = "sampling_timesteps must be less than self.num_timesteps"
         assert sampling_timesteps <= self.num_timesteps, msg
@@ -408,7 +418,7 @@ class GaussianDiffusion(nn.Module):
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        res = self.unnormalize(res)  # Res has values [-1, 1] due to clamping, map to [0, 1] instead
+        # res = self.unnormalize(res)  # Res has values [-1, 1] due to clamping, map to [0, 1] instead
         return res
 
 
