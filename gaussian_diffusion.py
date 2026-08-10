@@ -70,7 +70,7 @@ class GaussianDiffusion(nn.Module):
         register_buffer("posterior_std", posterior_std)
 
         ### Add weights for the loss calculation
-        snr = alphas_cumprod / (1 - alphas_cumprod)
+        snr = alphas_cumprod / (1 - alphas_cumprod)  # Signal-to-noise ratio
         loss_weight = torch.ones_like(snr) if objective == "pred_eps" else snr
         register_buffer("loss_weight", loss_weight)
 
@@ -122,14 +122,14 @@ class GaussianDiffusion(nn.Module):
         pred_noise = (x_t - sqrt_alphas_cumprod * x_0) / sqrt_one_minus_alphas_cumprod
         return pred_noise
 
-    def q_sample(self, x_0: Tensor, t: Tensor, noise: Tensor) -> Tensor:
+    def q_sample(self, x_0: Tensor, t: Tensor, eps: Tensor) -> Tensor:
         """
         Samples from q(x_t | x_0) according to Eq. (4) of the DDPM paper. This creates a noise image from a
         clean one i.e. x_0 by adding noise to it.
 
         :param x_0: A batch of original images of shape (batch_size, C, H, W).
         :param t: The time step of each image in the batch of size (batch_size, ).
-        :param noise: A batch of Gaussian noise sampled from N(0, 1) of the same shape as x_0.
+        :param eps: A batch of Gaussian noise sampled from N(0, 1) of the same shape as x_0.
         :returns: A batch of noisy images that are a blend of x_0 clean images and Gaussian noise.
         """
         # q(x_t | x_0) = N(x_t; sqrt(alpha_bar_t)*x_0, (1 - alpha_bar_t)I)
@@ -137,7 +137,7 @@ class GaussianDiffusion(nn.Module):
         sqrt_one_minus_alphas_cumprod = extract(self.sqrt_one_minus_alphas_cumprod, t, x_0.shape)
         # Sampling from N(mu, sigma^2) can be done as: x_t = mu + sigma * noise where noise ~ N(0, 1)
         mu, sigma = sqrt_alphas_cumprod * x_0, sqrt_one_minus_alphas_cumprod
-        x_t = mu + sigma * noise  # (B, C, H, W)
+        x_t = mu + sigma * eps  # (B, C, H, W)
         return x_t
 
     def training_loss(self, x_0: Tensor, class_id: Tensor) -> Tensor:
@@ -154,7 +154,16 @@ class GaussianDiffusion(nn.Module):
         :param class_id: An input tensor of shape (B, ) containing class IDs for each image.
         :returns: A single torch float representing the loss from running a training iteration for 1 batch.
         """
-        t = torch.randint(0, self.num_timesteps, (x_0.shape[0],), device=x_0.device).long()  # (B,) random t
+        B = x_0.shape[0]  # Batch size
+        # t = torch.randint(0, self.num_timesteps, (x_0.shape[0],), device=x_0.device).long()  # (B,) random t
+        # 50% of batches/examples sample uniformly
+        t_unif = torch.randint(0, self.num_timesteps, (B,), device=x_0.device).long()  # (B,)
+        # 50% explicitly sample low-noise timesteps
+        t_low = torch.randint(0, 200, (B,), device=x_0.device).long()  # (B,)
+        mask = torch.rand(B, device=x_0.device) < 0.5
+        t = torch.where(mask, t_low, t_unif)  # Sample timesteps more so on the lower end where the model
+        # makes the most errors and where the errors most impact the visual quality of the outputs
+
         x_0 = self.normalize(x_0)  # (B, C, H, W) convert [0, 1] to [-1, 1] values
         eps = torch.randn_like(x_0)  # (B, C, H, W) create Gaussian noise N(0, 1) of the same shape
         target = eps if self.objective == "pred_eps" else x_0  # (B, C, H, W)
@@ -246,17 +255,18 @@ class GaussianDiffusion(nn.Module):
                 (B, T+1, C, H, W) if return_all_t is True else (B, C, H, W)
         """
         self.eval()  # Set to eval mode for inference, switch off dropout and effects batch norm
+        device = class_id.device
         img_shape = (len(class_id), 3, self.image_size, self.image_size)  # (B, C, H, W)
-        rng = torch.Generator(device=class_id.device)  # Get up a random number generator
+        rng = torch.Generator(device=device)  # Get up a random number generator
         if seed is not None:  # Set the seed if one is provided for replicability
             rng.manual_seed(seed)
-        x_t = torch.randn(img_shape, device=self.betas.device, generator=rng)  # Generate pure noise ~ N(0, 1)
+        x_t = torch.randn(img_shape, device=device, generator=rng)  # Generate pure noise ~ N(0, 1)
         # Create a list to hold the images that are denoised, starting with a pure noise image
         x_t_all = [x_t] if return_all_t else None
 
         for t in tqdm(reversed(range(self.num_timesteps)), desc="DDPM sampling", total=self.num_timesteps):
             # Iteratively apply denoising steps to the image to move towards an original, clean image x_0
-            x_t = self.p_sample(x_t, class_id, t, cfg_scale, seed)
+            x_t = self.p_sample(x_t, class_id, t, cfg_scale, seed + t)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 
@@ -393,7 +403,7 @@ class GaussianDiffusion(nn.Module):
             # t_int_prev is the next timestep in the DDIM sampling process and prev step in the forward
             # noising process from x_0 -> x_T which is why it is called prev
             t_int_prev = timesteps[i + 1] if i < sampling_timesteps - 1 else -1
-            x_t = self.ddim_step(x_t, class_id, t_int, t_int_prev, eta, cfg_scale, seed)
+            x_t = self.ddim_step(x_t, class_id, t_int, t_int_prev, eta, cfg_scale, seed + i)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 

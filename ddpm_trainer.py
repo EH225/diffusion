@@ -429,7 +429,7 @@ class Trainer:
             per class to generate and save.
         """
         self.ema_model.eval()  # Switch to eval model for generating samples
-        # Create ncol synthetic images for each class
+        # Create n_samples synthetic images for each class
         class_id = [i for i in range(self.num_classes) for _ in range(n_samples)]
         titles = [f"{i} {self.class_labels[i]}" for i in class_id]
         class_id = torch.tensor(class_id, device=self.device)  # (B = num_classes * n_samples, )
