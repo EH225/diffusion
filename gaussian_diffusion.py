@@ -164,14 +164,14 @@ class GaussianDiffusion(nn.Module):
             print(f"x_0.min() >= 0, {min_val}, input x_0 may not be properly scaled to [-1, 1]")
 
         B = x_0.shape[0]  # Batch size
-        # t = torch.randint(0, self.num_timesteps, (x_0.shape[0],), device=x_0.device).long()  # (B,) random t
-        # 50% of batches/examples sample uniformly
-        t_unif = torch.randint(0, self.num_timesteps, (B,), device=x_0.device).long()  # (B,)
-        # 50% explicitly sample low-noise timesteps
-        t_low = torch.randint(0, int(self.num_timesteps * 0.2), (B,), device=x_0.device).long()  # (B,)
-        mask = torch.rand(B, device=x_0.device) < 0.5
-        t = torch.where(mask, t_low, t_unif)  # Sample timesteps more so on the lower end where the model
-        # makes the most errors and where the errors most impact the visual quality of the outputs
+        t = torch.randint(0, self.num_timesteps, (x_0.shape[0],), device=x_0.device).long()  # (B,) random t
+        # # 50% of batches/examples sample uniformly
+        # t_unif = torch.randint(0, self.num_timesteps, (B,), device=x_0.device).long()  # (B,)
+        # # 50% explicitly sample low-noise timesteps
+        # t_low = torch.randint(0, int(self.num_timesteps * 0.2), (B,), device=x_0.device).long()  # (B,)
+        # mask = torch.rand(B, device=x_0.device) < 0.5
+        # t = torch.where(mask, t_low, t_unif)  # Sample timesteps more so on the lower end where the model
+        # # makes the most errors and where the errors most impact the visual quality of the outputs
 
         eps = torch.randn_like(x_0)  # (B, C, H, W) create Gaussian noise N(0, 1) of the same shape
         target = eps if self.objective == "pred_eps" else x_0  # (B, C, H, W)
