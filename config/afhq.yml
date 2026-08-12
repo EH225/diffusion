@@ -18,7 +18,7 @@ GaussianDiffusion:
 
 training: # Specify parameters used for DDPM training
   batch_size: 128
-  lr_start: 5.0e-5 # Starting learning rate during training
+  lr_start: 2.0e-5 # Starting learning rate during training
   lr_end: 1.0e-6 # Final learning rate during training
   weight_decay: 0.0e-0 # L2 weight decay regularization
   num_steps: 200000 # The total number of train steps (including warmup)

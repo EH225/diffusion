@@ -434,13 +434,15 @@ class Trainer:
         titles = [f"{i} {self.class_labels[i]}" for i in class_id]
         class_id = torch.tensor(class_id, device=self.device)  # (B = num_classes * n_samples, )
         # Generate fake images i.e. synthetic samples, using the EMA model of prior params
-        x_fake = self.ema_model.ddim_sample(class_id, False, self.config["eval"]["cfg_scale"],
-                                            self.config["eval"]["sampling_timesteps"],
-                                            self.config["eval"]["eta"], seed)
-
-        # Save a copy to both the samples sub-directory and also the main directory to retain the latest
-        save_images(x_fake, titles, n_samples, os.path.join(self.samples_dir, f"samples-{self.step}.png"))
-        save_images(x_fake, titles, n_samples, os.path.join(self.results_dir, "samples-latest.png"))
+        for cfg_scale in [0.0, 1.0, self.config["eval"]["cfg_scale"]]:
+            x_fake = self.ema_model.ddim_sample(class_id, False, cfg_scale,
+                                                self.config["eval"]["sampling_timesteps"],
+                                                self.config["eval"]["eta"], seed)
+            # Save a copy to both the samples sub-directory and also the main directory to retain the latest
+            save_images(x_fake, titles, n_samples, os.path.join(self.samples_dir,
+                                                                f"samples-{self.step}_{cfg_scale}.png"))
+            save_images(x_fake, titles, n_samples, os.path.join(self.results_dir,
+                                                                f"samples-latest-{cfg_scale}.png"))
 
     @compute_with_amp
     def run_eval(self):
