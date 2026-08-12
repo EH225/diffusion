@@ -5,7 +5,7 @@ dataset: celebA
 UNet: # Define U-Net model parameters
   image_size: 64 # The image size height and width
   num_classes: 2 # The number of conditional classes
-  cond_dim: 128 # The size of the timestamp and class ID embedding vectors
+  cond_dim: 256 # The size of the timestamp and class ID embedding vectors
   dropout: 0.05 # Dropout normalization rate used in the CNN blocks
   groups: 32  # Number of channel groups for GroupNorm layers
   uncond_prob: 0.2 # The probability of dropping the class conditioning vector during training
@@ -18,7 +18,7 @@ GaussianDiffusion:
 
 training: # Specify parameters used for DDPM training
   batch_size: 512
-  lr_start: 5.0e-4 # Starting learning rate during training
+  lr_start: 1.0e-4 # Starting learning rate during training
   lr_end: 1.0e-6 # Final learning rate during training
   weight_decay: 0.0e-0 # L2 weight decay regularization
   num_steps: 100000 # The total number of train steps (including warmup)

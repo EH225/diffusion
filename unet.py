@@ -47,7 +47,7 @@ def UpSample(c_in: int, c_out: int):
     :returns: A nn.Module object instance.
     """
     return nn.Sequential(
-        nn.Upsample(scale_factor=2, mode="bilinear"),
+        nn.Upsample(scale_factor=2, mode="nearest"),
         nn.Conv2d(c_in, c_out, 3, padding=1),
     )
 
@@ -79,7 +79,7 @@ class SelfAttention(nn.Module):
         self.norm = nn.GroupNorm(groups, c_in)
         self.self_attention = nn.MultiheadAttention(embed_dim=c_in, num_heads=4, batch_first=True)
         # Define a trainable scaling factor for the residual connection to improve stability
-        self.res_scale = nn.Parameter(torch.ones(1) * 0.1)
+        # self.res_scale = nn.Parameter(torch.ones(1) * 0.1)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -94,7 +94,8 @@ class SelfAttention(nn.Module):
         # Use each spacial location as a separate token, apply multi-headed self-attention to tokens
         h, _ = self.self_attention(h, h, h)
         h = h.transpose(1, 2).reshape(B, C, H, W)  # Reshape (B, H*W, C) -> (B, C, H, W)
-        return h * self.res_scale + x  # Add a residual connection to the original input
+        # return h * self.res_scale + x  # Add a residual connection to the original input
+        return h + x  # Add a residual connection to the original input
 
 
 class ResnetBlock(nn.Module):
@@ -129,7 +130,7 @@ class ResnetBlock(nn.Module):
         # Initialize FiLM layer parameters at mu=0 and sigma^2=1 mimicking the identity transform at first
         self.gamma = nn.Linear(cond_dim, c_out)  # Scale shift
         nn.init.zeros_(self.gamma.weight)
-        nn.init.ones_(self.gamma.bias)
+        nn.init.zeros_(self.gamma.bias)
 
         self.beta = nn.Linear(cond_dim, c_out)  # Mean shift
         nn.init.zeros_(self.beta.weight)
@@ -139,7 +140,7 @@ class ResnetBlock(nn.Module):
         self.activation = nn.SiLU()  # SiLU (Sigmoid Linear Unit) activation
         self.conv2 = nn.Conv2d(c_out, c_out, 3, padding=1)
 
-        self.res_scale = nn.Parameter(torch.ones(1) * 0.1)
+        # self.res_scale = nn.Parameter(torch.ones(1) * 1.0)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: Tensor, cond_emb: Tensor = None) -> Tensor:
@@ -156,18 +157,19 @@ class ResnetBlock(nn.Module):
         x = self.activation(x)  # Apply SiLU (Sigmoid Linear Unit) activation
         x = self.conv1(x)  # (B, c_in, H, W) -> (B, c_out, H, W)
 
+        x = self.norm2(x)  # Apply group-norm to (B, c_out, H, W)
         # Pass the (B, cond_dim) conditioning tensor through the linear layers to allow the conditioning
         # vector to modulate every feature channel independently, this is the FiLM-style approach
         gamma = self.gamma(cond_emb)[:, :, None, None]  # (B, c_out, 1, 1)
         beta = self.beta(cond_emb)[:, :, None, None]  # (B, c_out, 1, 1)
-        x = gamma * x + beta  # Apply FiLM-style modulation to incorporate conditional info
+        x = (1 + gamma) * x + beta  # Apply FiLM-style modulation to incorporate conditional info
 
-        x = self.norm2(x)  # Apply group-norm to (B, c_out, H, W)
         x = self.activation(x)  # Apply SiLU (Sigmoid Linear Unit) activation
         x = self.dropout(x)  # Dropout regularization (B, c_out, H, W) no shape change
         x = self.conv2(x)  # (B, c_out, H, W) -> (B, c_out, H, W)
 
-        x = x * self.res_scale + x_resid  # Link with x_resid to form a residual connection
+        # x = x * self.res_scale + x_resid  # Link with x_resid to form a residual connection
+        x = x + x_resid  # Link with x_resid to form a residual connection
         return x
 
 
@@ -226,7 +228,8 @@ class UNet(nn.Module):
         )
 
         # Define an embedding layer for the class_id provided to the model
-        self.class_embedding = nn.Embedding(self.num_classes, self.cond_dim)  # (B, cond_dim)
+        # Add 1 extra class embedding for the case of no class i.e. a null category
+        self.class_embedding = nn.Embedding(self.num_classes + 1, self.cond_dim)  # (B, cond_dim)
 
         # 1). An initial convolutional layer which goes from 3 input RGB channels to self.dim
         self.init_conv = nn.Conv2d(in_channels=3, out_channels=self.dim, kernel_size=3, padding=1)
@@ -238,6 +241,7 @@ class UNet(nn.Module):
         # dimensions will be halved
 
         # For image_size=128 the down-sampling blocks will follow:
+        ## TODO: Update these commnets
         # H=W: 128 (img) -> 128 (init_conv) -> (128:64) ->   (64:32) ->   (32:16) ->    (16:8) ->     (8:4)
         # C:     3 (img) ->  64 (init_conv) -> (64:128) -> (128:256) -> (256:512) -> (512:512) -> (512:512)
         # The up-sampling blocks will be the opposite
@@ -259,7 +263,7 @@ class UNet(nn.Module):
             down_block = nn.ModuleList([
                 ResnetBlock(c_in, c_in, self.cond_dim, self.dropout, self.groups),
                 ResnetBlock(c_in, c_in, self.cond_dim, self.dropout, self.groups),
-                (SelfAttention(c_in, self.groups) if (idx == len(c_down_blocks) - 1) and self.use_self_attn
+                (SelfAttention(c_in, self.groups) if (idx >= len(c_down_blocks) - 2) and self.use_self_attn
                  else nn.Identity()),
                 DownSample(c_in, c_out),
             ])
@@ -282,13 +286,17 @@ class UNet(nn.Module):
                 UpSample(c_in, c_out),
                 ResnetBlock(c_out * 2, c_out, self.cond_dim, self.dropout, self.groups),
                 ResnetBlock(c_out * 2, c_out, self.cond_dim, self.dropout, self.groups),
-                (SelfAttention(c_out, self.groups) if idx == 0 and self.use_self_attn
+                (SelfAttention(c_out, self.groups) if idx in [0, 1] and self.use_self_attn
                  else nn.Identity()),
             ])
             self.ups.append(up_block)
 
         # 3). Add 1 final convolution to map to the output channels
+        self.out_norm = nn.GroupNorm(self.groups, self.dim)
+        self.out_act = nn.SiLU()
         self.final_conv = nn.Conv2d(in_channels=self.dim, out_channels=3, kernel_size=1)
+        nn.init.zeros_(self.final_conv.weight)
+        nn.init.zeros_(self.final_conv.bias)
 
     def _cfg_forward(self, x: Tensor, class_id: Tensor, t: Tensor, cfg_scale: float = 3.0) -> Tensor:
         """
@@ -337,10 +345,9 @@ class UNet(nn.Module):
         time_embed = self.time_embedding(t)
 
         # 2). Embed the class_id into a deep latent vector representation if one is provided
-        if class_id is None:  # Default to a vector of zeros if no class IDs are provided
-            class_embed = torch.zeros(x.shape[0], self.cond_dim, device=x.device)  # (B, cond_dim)
-        else:  # Otherwise, convert each class_id into a latent vector representation
-            class_embed = self.class_embedding(class_id)  # (B, cond_dim)
+        if class_id is None:  # Default to a null class embedding vector if no class IDs are provided
+            class_id = torch.full((x.shape[0],), self.num_classes, device=x.device, dtype=torch.long)
+        class_embed = self.class_embedding(class_id)  # (B, cond_dim) class embedding vectors
 
         # 3). If this is a forward pass called during training, randomly drop the class embedding some of
         # the time as specified by the config parameter uncond_prob
@@ -382,6 +389,7 @@ class UNet(nn.Module):
                 x = up_block[3](x)  # Pass x through a self-attention layer
 
         #   E). Final conv block
+        x = self.out_norm(x)
+        x = self.out_act(x)
         x = self.final_conv(x)
-
         return x
