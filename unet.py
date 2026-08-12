@@ -345,18 +345,19 @@ class UNet(nn.Module):
         time_embed = self.time_embedding(t)
 
         # 2). Embed the class_id into a deep latent vector representation if one is provided
-        if class_id is None:  # Default to a null class embedding vector if no class IDs are provided
+        if class_id is None:  # Default to a null class_id vector if no class IDs are provided
             class_id = torch.full((x.shape[0],), self.num_classes, device=x.device, dtype=torch.long)
-        class_embed = self.class_embedding(class_id)  # (B, cond_dim) class embedding vectors
 
-        # 3). If this is a forward pass called during training, randomly drop the class embedding some of
-        # the time as specified by the config parameter uncond_prob
-        if self.training:  # Randomly drop the class conditioning
-            mask = (torch.rand(class_embed.shape[0]) > self.uncond_prob).float()  # (B, )
-            mask = mask[:, None].to(class_embed.device)  # (B, 1) of 1s and 0s
-            class_embed = class_embed * mask  # Randomly zero out the class embedding with p=uncond_prob
+        # 3). If this is a forward pass during training, randomly drop the class embedding some of
+        # the time as specified by the config parameter uncond_prob to train the unconditional class
+        if self.training:  # Randomly replace class with the learned null class for CFG training
+            mask = torch.rand(class_id.shape[0], device=class_id.device) < self.uncond_prob
+            class_id = class_id.clone()  # Copy to avoid mutation of the original data
+            class_id[mask] = self.num_classes  # Randomly replace with class_id=num_classes to train the
+            # null embedding for the unconditional CFG forward pass
 
         # 4). Combine the timestep embedding with the class conditional embedding to obtain 1 context tensor
+        class_embed = self.class_embedding(class_id)  # (B, cond_dim) class embedding vectors
         cond_emb = time_embed + class_embed  # (B, cond_dim)
 
         # 5). Run the input x noisy images through the forward pass of the U-Net conditioned on context
