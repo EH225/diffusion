@@ -92,14 +92,14 @@ def generate_loss_plots(loss_dir: str, save_dir: str) -> None:
         ax.plot(train_loss["loss"].rolling(50, min_periods=1).mean())  # Apply smoothing
         ax.set_title("Train loss")
         ax.grid(color="lightgray")
-        ax.yscale("log")
+        ax.set_yscale("log")
 
     if len(val_loss) > 0:
         ax = axes[1]
         ax.plot(val_loss["loss"])
         ax.set_title("Val loss")
         ax.grid(color="lightgray")
-        ax.yscale("log")
+        ax.set_yscale("log")
 
     plt.tight_layout()
     fig.savefig(os.path.join(save_dir, "loss_plots.png"))
