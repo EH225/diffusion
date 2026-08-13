@@ -5,7 +5,7 @@ dataset: cifar10
 UNet: # Define U-Net model parameters
   image_size: 32 # The image size height and width
   num_classes: 10 # The number of conditional classes
-  cond_dim: 64 # The size of the timestamp and class ID embedding vectors
+  cond_dim: 128 # The size of the timestamp and class ID embedding vectors
   dropout: 0.05 # Dropout normalization rate used in the CNN blocks
   groups: 32  # Number of channel groups for GroupNorm layers
   uncond_prob: 0.2 # The probability of dropping the class conditioning vector during training
@@ -18,10 +18,10 @@ GaussianDiffusion:
 
 training: # Specify parameters used for DDPM training
   batch_size: 1024
-  lr_start: 5.0e-4 # Starting learning rate during training
+  lr_start: 2.0e-5 # Starting learning rate during training
   lr_end: 1.0e-6 # Final learning rate during training
   weight_decay: 0.0e-0 # L2 weight decay regularization
-  num_steps: 100000 # The total number of train steps (including warmup)
+  num_steps: 200000 # The total number of train steps (including warmup)
   warm_up_pct: 0.05  # The percentage of steps used for learning rate warm up
   adam_betas: [ 0.9, 0.999 ] # Betas for the AdamW optimizer
   grad_clip: 1.0 # Gradient clipping during training
