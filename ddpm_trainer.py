@@ -434,7 +434,7 @@ class Trainer:
         titles = [f"{i} {self.class_labels[i]}" for i in class_id]
         class_id = torch.tensor(class_id, device=self.device)  # (B = num_classes * n_samples, )
         # Generate fake images i.e. synthetic samples, using the EMA model of prior params
-        for cfg_scale in [0.0, 1.0, self.config["eval"]["cfg_scale"]]:
+        for cfg_scale in [0.0, 1.0, 3.0, 5.0]:
             x_fake = self.ema_model.ddim_sample(class_id, False, cfg_scale,
                                                 self.config["eval"]["sampling_timesteps"],
                                                 self.config["eval"]["eta"], seed)
