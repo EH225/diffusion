@@ -241,7 +241,6 @@ class UNet(nn.Module):
         # dimensions will be halved
 
         # For image_size=128 the down-sampling blocks will follow:
-        ## TODO: Update these commnets
         # H=W: 128 (img) -> 128 (init_conv) -> (128:64) ->   (64:32) ->   (32:16) ->    (16:8) ->     (8:4)
         # C:     3 (img) ->  64 (init_conv) -> (64:128) -> (128:256) -> (256:512) -> (512:512) -> (512:512)
         # The up-sampling blocks will be the opposite
