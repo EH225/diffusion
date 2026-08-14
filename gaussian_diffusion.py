@@ -243,7 +243,7 @@ class GaussianDiffusion(nn.Module):
 
     @torch.no_grad()
     def ddpm_sample(self, class_id: Tensor, return_all_t: bool = False, cfg_scale: float = 3.0,
-                    seed: int = None) -> Tensor:
+                    seed: int = None, show_pbar: bool = True) -> Tensor:
         """
         This method uses the slower DDPM sampling approach, which visits all timesteps.
 
@@ -259,6 +259,7 @@ class GaussianDiffusion(nn.Module):
         :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
             no CFG sampling at all. 2-5 is usually considered a good range.
         :param seed: A random seed that can be set to make sampling repeatable.
+        :param show_pbar: If True, then a tqdm progress bar will be displayed during sampling.
         :returns: A tensor of denoised images of size:
                 (B, T+1, C, H, W) if return_all_t is True else (B, C, H, W)
                 with values [-1, +1].
@@ -273,7 +274,8 @@ class GaussianDiffusion(nn.Module):
         # Create a list to hold the images that are denoised, starting with a pure noise image
         x_t_all = [x_t] if return_all_t else None
 
-        for t in tqdm(reversed(range(self.num_timesteps)), desc="DDPM sampling", total=self.num_timesteps):
+        for t in tqdm(reversed(range(self.num_timesteps)), desc="DDPM sampling", total=self.num_timesteps,
+                      disable=not show_pbar):
             # Iteratively apply denoising steps to the image to move towards an original, clean image x_0
             x_t = self.p_sample(x_t, class_id, t, cfg_scale, seed + t)
             if return_all_t:  # Only record the intermediate image steps if specified
@@ -358,7 +360,8 @@ class GaussianDiffusion(nn.Module):
 
     @torch.no_grad()
     def ddim_sample(self, class_id: Tensor, return_all_t: bool = False, cfg_scale: float = 3.0,
-                    sampling_timesteps: int = 50, eta: float = 0.0, seed: int = None) -> Tensor:
+                    sampling_timesteps: int = 50, eta: float = 0.0, seed: int = None, show_pbar: bool = True
+                    ) -> Tensor:
         """
         This method uses the faster DDIM sampling approach, which visits only a few timesteps.
 
@@ -381,6 +384,7 @@ class GaussianDiffusion(nn.Module):
         :param eta: Controls how much additional random noise is injected during each DDIM step. Set to 0
             for deterministic sampling.
         :param seed: A random seed that can be set to make sampling repeatable.
+        :param show_pbar: If True, then a tqdm progress bar will be displayed during sampling.
         :returns: A tensor of denoised image of size either:
                 (B, sampling_timesteps+1, C, H, W) if return_all_t is True else (B, C, H, W)
                 with values [-1, +1].
@@ -406,7 +410,8 @@ class GaussianDiffusion(nn.Module):
         # Create a list to hold the images that are denoised, starting with a pure noise image
         x_t_all = [x_t] if return_all_t else None
 
-        for i in tqdm(range(sampling_timesteps), desc="DDIM sampling", total=sampling_timesteps):
+        for i in tqdm(range(sampling_timesteps), desc="DDIM sampling", total=sampling_timesteps,
+                      disable=not show_pbar):
             # Iteratively apply denoising steps to the image to move towards an original, clean image x_0
             t_int = timesteps[i]  # Get the current timestemp x_t that we're currently at
             # Determine what the timestep will be, use -1 to represent the final x_0 output
