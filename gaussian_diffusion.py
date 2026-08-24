@@ -204,7 +204,7 @@ class GaussianDiffusion(nn.Module):
 
     @torch.no_grad()
     def p_sample(self, x_t: Tensor, class_id: Tensor, t: int, cfg_scale: float = 3.0,
-                 seed: int = None) -> Tensor:
+                 generator: torch.Generator = None) -> Tensor:
         """
         Samples from p(x_{t-1} | x_t) according to Eq. (6) of the DDPM paper. This returns 1 step forward
         of the de-noising process i.e. x_{t-1} is 1 step less noisy than x_t with x_0 being a clean image.
@@ -217,7 +217,7 @@ class GaussianDiffusion(nn.Module):
             and not a tensor of ints, it's the same int used for all images in the batch.
         :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
             no CFG sampling at all. 2-5 is usually considered a good range.
-        :param seed: A random seed that can be set to make sampling repeatable.
+        :param generator: A random number generator to use for adding noise.
         :returns: A batch of images x_{t-1} that are 1 step less noisy, same size and shape as x_t.
         """
         t = torch.full((x_t.shape[0],), t, device=x_t.device, dtype=torch.long)  # (B,) of all the same val t
@@ -228,13 +228,13 @@ class GaussianDiffusion(nn.Module):
         elif self.objective == "pred_eps":  # The model output will be the predicted noise
             eps = self.model(x_t, class_id, t, cfg_scale)
             x_0 = self.x_0_from_eps(x_t, t, eps)  # Convert from eps to x_0 using epx and x_t
-        x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
+        else:
+            raise ValueError(f"Objective not recognized: {self.objective}")
+        # x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
 
         # Get the mean and std for q(x_{t-1} | x_t, x_0) using self.q_posterior, and sample x_{t-1}
         posterior_mean, posterior_std = self.q_posterior(x_0, x_t, t)
-        rng = torch.Generator(device=class_id.device)  # Get up a random number generator
-        if seed is not None:  # Set the seed if one is provided for replicability
-            rng.manual_seed(seed)
+        rng = generator if generator is not None else torch.Generator(device=x_t.device)
         # Generate Gaussian noise N(0, 1) of size (B, C, H, W)
         noise = torch.randn_like(x_t, device=x_t.device, generator=rng)
         nonzero_mask = (t != 0).float().view(-1, 1, 1, 1)  # Handle if t == 0, then no noisy sampling
@@ -277,13 +277,12 @@ class GaussianDiffusion(nn.Module):
         for t in tqdm(reversed(range(self.num_timesteps)), desc="DDPM sampling", total=self.num_timesteps,
                       disable=not show_pbar):
             # Iteratively apply denoising steps to the image to move towards an original, clean image x_0
-            x_t = self.p_sample(x_t, class_id, t, cfg_scale, seed + t)
+            x_t = self.p_sample(x_t, class_id, t, cfg_scale, rng)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        # res = self.unnormalize(res)  # Res has values [-1, 1] due to clamping, map to [0, 1] instead
-        return res
+        return res.clamp(-1, 1)  # All output values are [-1, +1]
 
     def get_ddim_sigma(self, t_int: int, t_int_prev: int, eta: float) -> Tensor:
         """
@@ -308,8 +307,8 @@ class GaussianDiffusion(nn.Module):
         return eta * A * B
 
     @torch.no_grad()
-    def ddim_step(self, x_t: Tensor, clas_id: Tensor, t_int: int, t_int_prev: int, eta: float,
-                  cfg_scale: float = 3.0, seed: int = None) -> Tensor:
+    def ddim_step(self, x_t: Tensor, class_id: Tensor, t_int: int, t_int_prev: int, eta: float,
+                  cfg_scale: float = 3.0, generator: torch.Generator = None) -> Tensor:
         """
         This is a helper method for ddim_sample that return x_{t-k} from a given input x_t. The DDIM sampling
         method takes larger size k steps than the DDPM sampling method which always takes size 1 steps.
@@ -329,18 +328,20 @@ class GaussianDiffusion(nn.Module):
             for deterministic sampling.
         :param cfg_scale: A scaling factor used to control how strong the CFG sampling is. Set to 0.0 for
             no CFG sampling at all. 2-5 is usually considered a good range.
-        :param seed: A random seed that can be set to make sampling repeatable.
+        :param generator: A random number generator to use for adding noise.
         :return: A batch of images x_{t-1} that are 1 step less noisy, same size and shape as x_t.
         """
         t = torch.full((x_t.shape[0],), t_int, device=x_t.device, dtype=torch.long)  # (B,) of t_int
         # Get the model's prediction, note the model can predict either x_0 or the noise
         if self.objective == "pred_x_0":  # The model output will be the predicted x_0
-            x_0 = self.model(x_t, clas_id, t, cfg_scale)
+            x_0 = self.model(x_t, class_id, t, cfg_scale)
             eps = self.eps_from_x_0(x_t, t, x_0)  # Convert from x_0 to eps using x_0 and x_t
         elif self.objective == "pred_eps":  # The model output will be the predicted noise
-            eps = self.model(x_t, clas_id, t, cfg_scale)
+            eps = self.model(x_t, class_id, t, cfg_scale)
             x_0 = self.x_0_from_eps(x_t, t, eps)  # Convert from eps to x_0 using eps and x_t+
-        x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
+        else:
+            raise ValueError(f"Objective not recognized: {self.objective}")
+        # x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
 
         if t_int_prev < 0:  # If we're at the final DDIM sampling step, just return x_0, no noise to be added
             return x_0
@@ -351,9 +352,7 @@ class GaussianDiffusion(nn.Module):
         # Direction pointing toward x_t from x_0
         pred_direction = torch.sqrt(torch.clamp(1 - alpha_bar_prev - sigma ** 2, min=0.0)) * eps
         # Compute the DDIM update i.e. x_t -> x_{t-1}
-        rng = torch.Generator(device=x_t.device)  # Get up a random number generator
-        if seed is not None:  # Set the seed if one is provided for replicability
-            rng.manual_seed(seed)
+        rng = generator if generator is not None else torch.Generator(device=x_t.device)
         noise = torch.randn_like(x_t, device=x_t.device, generator=rng)
         x_tmk = torch.sqrt(alpha_bar_prev) * x_0 + pred_direction + sigma * noise
         return x_tmk  # x_{t-k} (B, C, H, W)
@@ -399,7 +398,8 @@ class GaussianDiffusion(nn.Module):
 
         # Create a subset of the training timesteps to use during sampling
         # Example: 1000 training steps -> 50 DDIM sampling steps
-        timesteps = torch.linspace(self.num_timesteps - 1, 0, sampling_timesteps, device=device).long()
+        timesteps = torch.linspace(self.num_timesteps - 1, 0, sampling_timesteps,
+                                   device=device).round().long()
 
         # Start from pure Gaussian noise x_T
         img_shape = (len(class_id), 3, self.image_size, self.image_size)  # (B, C, H, W)
@@ -418,13 +418,12 @@ class GaussianDiffusion(nn.Module):
             # t_int_prev is the next timestep in the DDIM sampling process and prev step in the forward
             # noising process from x_0 -> x_T which is why it is called prev
             t_int_prev = timesteps[i + 1] if i < sampling_timesteps - 1 else -1
-            x_t = self.ddim_step(x_t, class_id, t_int, t_int_prev, eta, cfg_scale, seed + i)
+            x_t = self.ddim_step(x_t, class_id, t_int, t_int_prev, eta, cfg_scale, rng)
             if return_all_t:  # Only record the intermediate image steps if specified
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        # res = self.unnormalize(res)  # Res has values [-1, 1] due to clamping, map to [0, 1] instead
-        return res
+        return res.clamp(-1, 1)  # All output values are [-1, +1]
 
 
 ########################
