@@ -27,7 +27,7 @@ training: # Specify parameters used for DDPM training
   grad_clip: 1.0 # Gradient clipping during training
   use_amp: True # Whether to use automatic mixed-precision computations
   use_latest_checkpoint: True
-  eval_every: 1000 # How often to compute eval loss and generate samples
+  eval_every: 5000 # How often to compute eval loss and generate samples
   save_every: 10000  # How often to cache the model checkpoints and losses
 
 eval:
