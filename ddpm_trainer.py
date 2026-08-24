@@ -434,15 +434,28 @@ class Trainer:
         titles = [f"{i} {self.class_labels[i]}" for i in class_id]
         class_id = torch.tensor(class_id, device=self.device)  # (B = num_classes * n_samples, )
         # Generate fake images i.e. synthetic samples, using the EMA model of prior params
-        for cfg_scale in [0.0, 1.0, 3.0, 5.0]:
+        for cfg_scale in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]:
+            # Generate DDIM samples
             x_fake = self.ema_model.ddim_sample(class_id, False, cfg_scale,
                                                 self.config["eval"]["sampling_timesteps"],
                                                 self.config["eval"]["eta"], seed)
             # Save a copy to both the samples sub-directory and also the main directory to retain the latest
-            save_images(x_fake, titles, n_samples, os.path.join(self.samples_dir,
-                                                                f"samples-{self.step}_{cfg_scale}.png"))
+            save_dir = os.path.join(self.samples_dir, f"ddim_cfg_{cfg_scale}")
+            os.makedirs(save_dir, exist_ok=True)
+            save_images(x_fake, titles, n_samples,
+                        os.path.join(save_dir, f"ddim_samples_{self.step}_{cfg_scale}.png"))
             save_images(x_fake, titles, n_samples, os.path.join(self.results_dir,
-                                                                f"samples-latest-{cfg_scale}.png"))
+                                                                f"ddim_samples_latest_{cfg_scale}.png"))
+
+            # Generate DDPM samples
+            x_fake = self.ema_model.ddpm_sample(class_id, False, cfg_scale, seed)
+            # Save a copy to both the samples sub-directory and also the main directory to retain the latest
+            save_dir = os.path.join(self.samples_dir, f"ddpm_cfg_{cfg_scale}")
+            os.makedirs(save_dir, exist_ok=True)
+            save_images(x_fake, titles, n_samples,
+                        os.path.join(save_dir, f"ddpm_samples_{self.step}_{cfg_scale}.png"))
+            save_images(x_fake, titles, n_samples, os.path.join(self.results_dir,
+                                                                f"ddpm_samples_latest_{cfg_scale}.png"))
 
     @compute_with_amp
     def run_eval(self):

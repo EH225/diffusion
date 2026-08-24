@@ -20,8 +20,8 @@ training: # Specify parameters used for DDPM training
   batch_size: 256
   lr_start: 2.0e-5 # Starting learning rate during training
   lr_end: 1.0e-6 # Final learning rate during training
-  weight_decay: 0.0e-0 # L2 weight decay regularization
-  num_steps: 200000 # The total number of train steps (including warmup)
+  weight_decay: 1.0e-4 # L2 weight decay regularization
+  num_steps: 100000 # The total number of train steps (including warmup)
   warm_up_pct: 0.05  # The percentage of steps used for learning rate warm up
   adam_betas: [ 0.9, 0.999 ] # Betas for the AdamW optimizer
   grad_clip: 1.0 # Gradient clipping during training
@@ -33,5 +33,5 @@ training: # Specify parameters used for DDPM training
 eval:
   batch_size: 256
   cfg_scale: 3.0 # Set a classifier-free scaling factor for eval sampling
-  sampling_timesteps: 100 # Set how many sampling timesteps to use for DDIM eval sampling
+  sampling_timesteps: 500 # Set how many sampling timesteps to use for DDIM eval sampling
   eta: 0.0 # Set how much noise to add during DDIM sampling
