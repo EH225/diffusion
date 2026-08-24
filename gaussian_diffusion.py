@@ -282,7 +282,7 @@ class GaussianDiffusion(nn.Module):
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        return res.clamp(-1, 1)  # All output values are [-1, +1]
+        return res #.clamp(-1, 1)  # All output values are [-1, +1]
 
     def get_ddim_sigma(self, t_int: int, t_int_prev: int, eta: float) -> Tensor:
         """
@@ -423,7 +423,7 @@ class GaussianDiffusion(nn.Module):
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        return res.clamp(-1, 1)  # All output values are [-1, +1]
+        return res #.clamp(-1, 1)  # All output values are [-1, +1]
 
 
 ########################
