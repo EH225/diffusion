@@ -1,0 +1,37 @@
+# Config file for training the diffusion model on the afhq dataset
+name: ddpm_afhq64
+dataset: afhq64
+
+UNet: # Define U-Net model parameters
+  image_size: 64 # The image size height and width
+  num_classes: 3 # The number of conditional classes
+  cond_dim: 128 # The size of the timestamp and class ID embedding vectors
+  dropout: 0.05 # Dropout normalization rate used in the CNN blocks
+  groups: 32  # Number of channel groups for GroupNorm layers
+  uncond_prob: 0.2 # The probability of dropping the class conditioning vector during training
+  use_self_attn: True # Whether to include self-attention layers
+
+GaussianDiffusion:
+  timesteps: 1000  # The number of training timesteps for the DDPM training process
+  objective: "pred_eps" # Either pred_eps or pred_x_0 for what the UNet should predict
+  beta_schedule: "cosine" # Determines the schedule of timesteps to use during training
+
+training: # Specify parameters used for DDPM training
+  batch_size: 256
+  lr_start: 2.0e-5 # Starting learning rate during training
+  lr_end: 1.0e-6 # Final learning rate during training
+  weight_decay: 0.0e-0 # L2 weight decay regularization
+  num_steps: 200000 # The total number of train steps (including warmup)
+  warm_up_pct: 0.05  # The percentage of steps used for learning rate warm up
+  adam_betas: [ 0.9, 0.999 ] # Betas for the AdamW optimizer
+  grad_clip: 1.0 # Gradient clipping during training
+  use_amp: True # Whether to use automatic mixed-precision computations
+  use_latest_checkpoint: True
+  eval_every: 1000 # How often to compute eval loss and generate samples
+  save_every: 10000  # How often to cache the model checkpoints and losses
+
+eval:
+  batch_size: 256
+  cfg_scale: 3.0 # Set a classifier-free scaling factor for eval sampling
+  sampling_timesteps: 100 # Set how many sampling timesteps to use for DDIM eval sampling
+  eta: 0.0 # Set how much noise to add during DDIM sampling
