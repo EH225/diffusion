@@ -144,13 +144,12 @@ class CelebADataset(Dataset):
 
 class AFHQDataset(Dataset):
     """
-    Animal Faces High-Quality (AFHQ) dataset, which returns [128 x 128 x 3] images and has 3 classes
-    labels [0-2].
+    Animal Faces High-Quality (AFHQ) dataset, which returns images and has 3 classes labels [0-2].
     """
 
     def __init__(self, dataset_dir: str, split: str = "train", transform=None):
         """
-        Initializes an Oxford Pets dataset.
+        Initializes an Animal Faces High-Quality (AFHQ) dataset.
 
         :param dataset_dir: A directory containing an images/ folder and meta_data.csv file.
         :param split: The dataset split to use in this dataset i.e. "train" or "val".

@@ -1,6 +1,6 @@
 # Config file for training the diffusion model on the afhq dataset
 name: ddpm_afhq64
-dataset: afhq64
+dataset: afhq
 
 UNet: # Define U-Net model parameters
   image_size: 64 # The image size height and width
