@@ -444,8 +444,9 @@ class Trainer:
             os.makedirs(save_dir, exist_ok=True)
             save_images(x_fake, titles, n_samples,
                         os.path.join(save_dir, f"ddim_samples_{self.step}_{cfg_scale}.png"))
-            save_images(x_fake, titles, n_samples, os.path.join(self.results_dir,
-                                                                f"ddim_samples_latest_{cfg_scale}.png"))
+            save_dir = os.path.join(self.samples_dir, "latest")
+            os.makedirs(save_dir, exist_ok=True)
+            save_images(x_fake, titles, n_samples, os.path.join(save_dir, f"ddim_samples_{cfg_scale}.png"))
 
             # Generate DDPM samples
             x_fake = self.ema_model.ddpm_sample(class_id, False, cfg_scale, seed)
@@ -454,8 +455,9 @@ class Trainer:
             os.makedirs(save_dir, exist_ok=True)
             save_images(x_fake, titles, n_samples,
                         os.path.join(save_dir, f"ddpm_samples_{self.step}_{cfg_scale}.png"))
-            save_images(x_fake, titles, n_samples, os.path.join(self.results_dir,
-                                                                f"ddpm_samples_latest_{cfg_scale}.png"))
+            save_dir = os.path.join(self.samples_dir, "latest")
+            os.makedirs(save_dir, exist_ok=True)
+            save_images(x_fake, titles, n_samples, os.path.join(save_dir, f"ddpm_samples_{cfg_scale}.png"))
 
     @compute_with_amp
     def run_eval(self):
