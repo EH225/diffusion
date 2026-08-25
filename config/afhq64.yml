@@ -20,14 +20,14 @@ training: # Specify parameters used for DDPM training
   batch_size: 256
   lr_start: 2.0e-5 # Starting learning rate during training
   lr_end: 1.0e-6 # Final learning rate during training
-  weight_decay: 1.0e-4 # L2 weight decay regularization
-  num_steps: 100000 # The total number of train steps (including warmup)
+  weight_decay: 0.0e-0 # L2 weight decay regularization
+  num_steps: 200000 # The total number of train steps (including warmup)
   warm_up_pct: 0.05  # The percentage of steps used for learning rate warm up
   adam_betas: [ 0.9, 0.999 ] # Betas for the AdamW optimizer
   grad_clip: 1.0 # Gradient clipping during training
   use_amp: True # Whether to use automatic mixed-precision computations
   use_latest_checkpoint: True
-  eval_every: 5000 # How often to compute eval loss and generate samples
+  eval_every: 1000 # How often to compute eval loss and generate samples
   save_every: 10000  # How often to cache the model checkpoints and losses
 
 eval:
