@@ -230,7 +230,7 @@ class GaussianDiffusion(nn.Module):
             x_0 = self.x_0_from_eps(x_t, t, eps)  # Convert from eps to x_0 using epx and x_t
         else:
             raise ValueError(f"Objective not recognized: {self.objective}")
-        # x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
+        x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
 
         # Get the mean and std for q(x_{t-1} | x_t, x_0) using self.q_posterior, and sample x_{t-1}
         posterior_mean, posterior_std = self.q_posterior(x_0, x_t, t)
@@ -282,7 +282,7 @@ class GaussianDiffusion(nn.Module):
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        return res #.clamp(-1, 1)  # All output values are [-1, +1]
+        return res.clamp(-1, 1)  # All output values are [-1, +1]
 
     def get_ddim_sigma(self, t_int: int, t_int_prev: int, eta: float) -> Tensor:
         """
@@ -341,7 +341,7 @@ class GaussianDiffusion(nn.Module):
             x_0 = self.x_0_from_eps(x_t, t, eps)  # Convert from eps to x_0 using eps and x_t+
         else:
             raise ValueError(f"Objective not recognized: {self.objective}")
-        # x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
+        x_0 = x_0.clamp(-1, 1)  # Clamp to the valid range [-1, 1] to ensure the generate remains stable
 
         if t_int_prev < 0:  # If we're at the final DDIM sampling step, just return x_0, no noise to be added
             return x_0
@@ -423,7 +423,7 @@ class GaussianDiffusion(nn.Module):
                 x_t_all.append(x_t)
 
         res = torch.stack(x_t_all, dim=1) if return_all_t else x_t
-        return res #.clamp(-1, 1)  # All output values are [-1, +1]
+        return res.clamp(-1, 1)  # All output values are [-1, +1]
 
 
 ########################
