@@ -29,5 +29,5 @@ deterministic sampling steps, substantially reducing generation time while maint
 resulting model can be used for applications including realistic image synthesis, image reconstruction and
 denoising, latent-space or image-space interpolation, and image in-painting.
 
-The synthetic (64 x 64 x 3) images below are from the diffusion model trained on the AFHQ dataset:
-![afhq_ddpm_cfg2_samples.png](..%2F..%2F..%2FAppData%2FLocal%2FTemp%2Fafhq_ddpm_cfg2_samples.png)
+The grid of synthetic images (64 x 64 x 3)  below are from the diffusion model trained on the AFHQ dataset:
+![afhq_ddpm_cfg2_samples.png](sample_results/afhq_ddpm_cfg2_samples.png)
