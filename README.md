@@ -4,6 +4,8 @@ This repository contains code for constructing and training a conditional diffus
 and HFHQ. Below is a brief summary of the repo layout:
 
 - `config`: This folder contains config files that specify model architecture and training hyperparameters.
+- `env`: This directory contains `environment.yml` and `diffusion-video-environment.yml` that describe the
+  venv build to run this project.
 - `utils.py`: This module contains general utility functions used throughout training and analysis.
 - `dataset_utils.py`: This module contains utility functions for pre-processing and constructing dataloaders.
 - `gaussian_diffusion`: This module contains methods for training and sampling Gaussian diffusion models.
@@ -12,8 +14,6 @@ and HFHQ. Below is a brief summary of the repo layout:
 - `unet.py`: This module contains the model definition of the U-Net diffusion models.
 - `runner.py`: This module provides easy-to-use function for running training for a given config.
 - `gen_video.py`: This module can be used to create time lapse videos of samples throughout training.
-- `environment.yml` - This file outlines the requirements of the conda env used to run the experiments of this
-  project.
 
 ## Abstract
 
